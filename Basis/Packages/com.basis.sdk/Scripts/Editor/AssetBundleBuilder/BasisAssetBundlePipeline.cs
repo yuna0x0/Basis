@@ -57,6 +57,7 @@ public static class BasisAssetBundlePipeline
         {
             EditorUserBuildSettings.SwitchActiveBuildTarget(BuildPipeline.GetBuildTargetGroup(Target), Target);
         }
+        await WaitForAssetDatabaseIdle();
         string uncombinedRoot = BasisBundleBuild.PathConversion(settings.AssetBundleUnCombined);
         string targetDirectory = Path.Combine(uncombinedRoot, Folder, Target.ToString());
 
@@ -179,6 +180,37 @@ public static class BasisAssetBundlePipeline
         {
             sceneBuildName?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Seconds to wait for a pending asset import before building anyway.
+    /// </summary>
+    public static double AssetDatabaseIdleTimeoutSeconds = 300;
+
+    /// <summary>
+    /// A platform switch can queue a package resolve (Linux adds its cross-compile toolchain package)
+    /// whose registration and asset import land on a later editor tick, possibly in the middle of a
+    /// later target. While that import runs, AssetDatabase.CreateFolder and GenerateUniqueAssetPath
+    /// return nothing, so a build hook that creates assets (NDMF) fails with
+    /// "Creating asset at path  failed". Wait for the import to finish before running hooks.
+    /// </summary>
+    public static async Task WaitForAssetDatabaseIdle()
+    {
+        if (!EditorApplication.isUpdating)
+        {
+            return;
+        }
+        double started = EditorApplication.timeSinceStartup;
+        while (EditorApplication.isUpdating)
+        {
+            if (EditorApplication.timeSinceStartup - started > AssetDatabaseIdleTimeoutSeconds)
+            {
+                BasisDebug.LogWarning($"Asset database still importing after {AssetDatabaseIdleTimeoutSeconds} seconds, building anyway.");
+                return;
+            }
+            await Task.Yield();
+        }
+        BasisDebug.Log($"Waited {EditorApplication.timeSinceStartup - started:F1} seconds for the asset database before building for {EditorUserBuildSettings.activeBuildTarget}.");
     }
 
     public static void PostProcessAvatar(GameObject prefab)

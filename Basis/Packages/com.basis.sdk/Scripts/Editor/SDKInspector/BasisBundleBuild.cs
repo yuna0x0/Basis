@@ -495,7 +495,13 @@ public static class BasisBundleBuild
     {
         string generatedID = null;
         string stagingRoot = null;
+        BuildTarget originalActiveTarget = EditorUserBuildSettings.activeBuildTarget;
 
+        // Switching build target requests a script compilation. If it finishes while a later
+        // target is still building, the domain reload drops this async chain: the build stops
+        // silently and the editor stays on whichever target was active. Hold the reload until
+        // the build is over.
+        EditorApplication.LockReloadAssemblies();
         try
         {
             if (PreBuildBundleEvents != null)
@@ -515,8 +521,6 @@ public static class BasisBundleBuild
 
             Debug.Log("Starting BuildBundle...");
             EditorUtility.DisplayProgressBar(BasisEditorLocalization.Get("sdk.bundleBuild.progress.start"), BasisEditorLocalization.Get("sdk.bundleBuild.progress.start"), 0);
-
-            BuildTarget originalActiveTarget = EditorUserBuildSettings.activeBuildTarget;
 
             if (!ErrorChecking(basisContentBase, out string error))
             {
@@ -674,8 +678,6 @@ public static class BasisBundleBuild
                 OpenRelativePath(buildOutDir);
             }
 
-            RestoreOriginalBuildTarget(originalActiveTarget);
-
             BasisDebug.Log("Successfully built asset bundle.");
             EditorUtility.ClearProgressBar();
             return (true, "Success");
@@ -695,6 +697,11 @@ public static class BasisBundleBuild
 
             EditorUtility.ClearProgressBar();
             return (false, $"BuildBundle Exception: {ex.Message}");
+        }
+        finally
+        {
+            RestoreOriginalBuildTarget(originalActiveTarget);
+            EditorApplication.UnlockReloadAssemblies();
         }
     }
     /// <summary>
